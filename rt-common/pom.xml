@@ -35,6 +35,7 @@
             <artifactId>flink-connector-mysql-cdc</artifactId>
         </dependency>
 
+
         <!-- hbase 依赖-->
         <dependency>
             <groupId>org.apache.hbase</groupId>

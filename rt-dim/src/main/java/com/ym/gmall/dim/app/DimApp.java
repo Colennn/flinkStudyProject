@@ -3,10 +3,10 @@ package com.ym.gmall.dim.app;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.ververica.cdc.connectors.mysql.source.MySqlSource;
-import com.ververica.cdc.connectors.mysql.table.StartupOptions;
-import com.ververica.cdc.debezium.JsonDebeziumDeserializationSchema;
 import com.ym.gmall.common.base.BaseApp;
 import com.ym.gmall.common.bean.TableProcessDim;
+import com.ym.gmall.common.utils.FlinkCDCUtil;
+import com.ym.gmall.common.utils.FlinkSinkUtil;
 import com.ym.gmall.common.utils.HBaseUtil;
 import com.ym.gmall.common.utils.JdbcUtil;
 import com.ym.gmall.function.HBaseSinkFunction;
@@ -36,11 +36,8 @@ import static com.ym.gmall.common.constant.Constant.*;
 public class DimApp extends BaseApp {
 
     public static void main(String[] args) {
-        new DimApp() // 这里调用基类里面写好的 start()
-                .start(9999,    // TODO 端口等环境搭建好再改
-                        4,  // 这里为什么给
-                        "dim_app",
-                        TOPIC_DB);
+        // 去你他大爷的，怎么会有 BUG
+        new DimApp().start(7788, 2, "dim_app", TOPIC_DB);
     }
 
     @Override
@@ -48,20 +45,34 @@ public class DimApp extends BaseApp {
 
         // 1. 从 kafka 消费数据，对数据进行清洗
         SingleOutputStreamOperator<JSONObject> etlStream = etl(stream);
+        stream.print();
         // 2. 通过 flinkCDC 读取配置表的数据，从 MySQL 读取数据
         SingleOutputStreamOperator<TableProcessDim> configStream = readTableProceess(env);
+        configStream.print();
+
         // 3. 根据配置表的数据，再 HBase 中建表 TODO 这里用到了富函数，要重点看一下
         //      配置流写入到广播流里面
-        configStream = creatHBaseTable(configStream);
+        // 这里把 HBASE 的代码去掉，用 topic_dim 代替
+//        configStream = creatHBaseTable(configStream);
         // 4. 主流 connect 配置流，并对关联后的流作处理
         SingleOutputStreamOperator<Tuple2<JSONObject, TableProcessDim>> connectStream =
                 connect(etlStream, configStream);
+        connectStream.print();
         // 5. 删除不需要的字段
         SingleOutputStreamOperator<Tuple2<JSONObject, TableProcessDim>> resultStream =
                 deleteNotNeedColumns(connectStream);
-        // 6. 写出到 HBase 目标表？ TODO 这里的数据在哪里会用到？
-        writeToHBase(resultStream);
-
+        resultStream.print();
+        // 6. 写出到 HBase 目标表？
+//        writeToHBase(resultStream);
+        resultStream.map(
+                new MapFunction<Tuple2<JSONObject, TableProcessDim>, String>() {
+                    @Override
+                    public String map(
+                            Tuple2<JSONObject, TableProcessDim> t) throws Exception {
+                        return JSON.toJSONString(t.f1);
+                    }
+                }
+        ).sinkTo(FlinkSinkUtil.getKafkaSink(TOPIC_DIM));
 
     }
 
@@ -100,7 +111,7 @@ public class DimApp extends BaseApp {
                         map =  new HashMap<>();
                         java.sql.Connection mysqlConn = JdbcUtil.getMysqlConnection();
                         List<TableProcessDim> tableProcessDims = JdbcUtil.queryList(mysqlConn,
-                                "select * from gmall2023_config.table_process_dim",
+                                "select * from gmall.table_process_dim",
                                 TableProcessDim.class,
                                 true
                         );
@@ -186,6 +197,16 @@ public class DimApp extends BaseApp {
             private Connection hbaseConn;
 
             @Override
+            public void open(Configuration parameters) throws Exception {
+                hbaseConn = HBaseUtil.getConnection();
+            }
+
+            @Override
+            public void close() throws Exception {
+                HBaseUtil.closeHBaseConn(hbaseConn);
+            }
+
+            @Override
             public TableProcessDim map(TableProcessDim tableProcessDim) throws Exception {
                 // c r 建表
                 // d 删表
@@ -218,17 +239,7 @@ public class DimApp extends BaseApp {
         props.setProperty("useSSL", "false");
         props.setProperty("allowPublicKeyRetrieval", "true");
 
-        MySqlSource<String> mySqlSource = MySqlSource.<String>builder()
-                .hostname(MYSQL_HOST)
-                .port(MYSQL_PORT)
-                .username(MYSQL_USER_NAME)
-                .password(MYSQL_PASSWORD)
-                .databaseList(MYSQL_DATABASE)
-                .tableList(MYSQL_TABLE)
-                .jdbcProperties(props)
-                .deserializer(new JsonDebeziumDeserializationSchema())  // 为什么这一句和MySqlSource.<String>builder()对应
-                .startupOptions(StartupOptions.initial())
-                .build();
+        MySqlSource<String> mySqlSource = FlinkCDCUtil.getMysqlSource("gmall.table_process_dim");
 
         return env.fromSource(mySqlSource, WatermarkStrategy.noWatermarks(), "cdc-source")
                 .setParallelism(1)
@@ -260,6 +271,8 @@ public class DimApp extends BaseApp {
         return stream.filter(new FilterFunction<String>() {
             @Override
             public boolean filter(String value) {
+                value = value.replaceAll("\\\\", "");
+                value = value.substring(1, value.length() - 1);;
                 try {
                     JSONObject jsonObject = JSON.parseObject(value);
                     String database = jsonObject.getString("database");

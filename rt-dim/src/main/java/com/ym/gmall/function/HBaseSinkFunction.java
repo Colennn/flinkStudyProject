@@ -17,18 +17,18 @@ public class HBaseSinkFunction extends RichSinkFunction<Tuple2<JSONObject, Table
 
     private Connection hbaseConn;
 
-    private Jedis jedis;
+//    private Jedis jedis;
 
     @Override
     public void open(Configuration parameters) throws Exception {
         hbaseConn = HBaseUtil.getConnection();
-        jedis = RedisUtil.getJedis();
+//        jedis = RedisUtil.getJedis();
     }
 
     @Override
     public void close() throws Exception {
         HBaseUtil.closeHBaseConn(hbaseConn);
-        RedisUtil.closeJedis(jedis);
+//        RedisUtil.closeJedis(jedis);
     }
 
     @Override
@@ -56,7 +56,7 @@ public class HBaseSinkFunction extends RichSinkFunction<Tuple2<JSONObject, Table
         if ("delete".equals(op) || "update".equals(op)) {
             log.info("遇到数据更新或删除，从 Redis 里面删除：{}", value.f0);
             String key = RedisUtil.getKey(value.f1.getSinkTable(), value.f1.getSinkRowKey());
-            jedis.del(key); // TODO 这里一开始还没太看懂，在写入  HBase 之前就已经缓存到 Redis 了
+//            jedis.del(key); // TODO 这里一开始还没太看懂，在写入  HBase 之前就已经缓存到 Redis 了
         }
     }
 }

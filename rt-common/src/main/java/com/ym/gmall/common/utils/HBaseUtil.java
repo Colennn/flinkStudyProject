@@ -20,10 +20,19 @@ import static com.ym.gmall.common.constant.Constant.HBASE_ZOOKEEPER_QUORUM;
 @Slf4j
 public class HBaseUtil {
 
+    public static void main(String[] args) throws IOException {
+        Connection conn = getConnection();
+        TableName tableName = TableName.valueOf("gmall", "table_test");
+        Table table = conn.getTable(tableName);
+        Admin admin = conn.getAdmin();
+        System.out.println(admin.tableExists(tableName));
+
+    }
+
     public static Connection getConnection() throws IOException {
         Configuration conf = new Configuration();
-        conf.set("hbase.zookeeper.quorum", HBASE_ZOOKEEPER_QUORUM);
-        conf.set("hbase.zookeeper.property.clientPort", HBASE_ZOOKEEPER_PROPERTY_CLIENTPORT);
+        conf.set("hbase.zookeeper.quorum", "localhost");
+        conf.set("hbase.zookeeper.property.clientPort", "2182");
 
         return ConnectionFactory.createConnection(conf);
     }
