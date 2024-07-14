@@ -49,4 +49,6 @@ public class Constant {
 
     public static final int TWO_DAY_SECONDS = 2 * 24 * 60 * 60;
 
+    public static final String DORIS_FE_NODES = "";
+    public static final String DORIS_DATABASE = "";
 }
